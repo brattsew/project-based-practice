@@ -1,13 +1,20 @@
 [project]
 name = "emotion-calibration"
 version = "0.1.0"
-description = "Small educational project on post-calibration of emotion classifier probabilities"
+description = "Учебный проект по посткалибровке вероятностей классификаторов эмоций"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "librosa>=0.11.0",
+    "numpy>=2.4.6",
+    "pandas>=3.0.5",
+    "scikit-learn>=1.9.0",
+]
 
 [project.scripts]
 ravdess-convert = "emotion_calibration.convert_ravdess:main"
+ravdess-features = "emotion_calibration.extract_features:main"
+ravdess-classify = "emotion_calibration.classify:main"
 
 [build-system]
 requires = ["hatchling"]

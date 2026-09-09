@@ -1,0 +1,4 @@
+model,accuracy,macro_f1,log_loss
+Logistic Regression,0.4417,0.4353,1.9314
+Random Forest,0.4958,0.4772,1.5245
+Gaussian Naive Bayes,0.4167,0.4139,3.518

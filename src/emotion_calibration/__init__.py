@@ -1,1 +1,1 @@
-"""Utilities for the emotion probability calibration project."""
+"""Инструменты проекта по калибровке вероятностей эмоций."""

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Датасеты и получаемые результаты не храним в Git.
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep

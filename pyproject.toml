@@ -9,12 +9,14 @@ dependencies = [
     "numpy>=2.4.6",
     "pandas>=3.0.5",
     "scikit-learn>=1.9.0",
+    "joblib>=1.4.0",
 ]
 
 [project.scripts]
 ravdess-convert = "emotion_calibration.convert_ravdess:main"
 ravdess-features = "emotion_calibration.extract_features:main"
 ravdess-classify = "emotion_calibration.classify:main"
+ravdess-calibrate = "emotion_calibration.calibrate:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -22,3 +24,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/emotion_calibration"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

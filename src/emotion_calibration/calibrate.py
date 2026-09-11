@@ -1,4 +1,4 @@
-"""Post-calibrate emotion probabilities and evaluate only on held-out actors."""
+"""Посткалибровка вероятностей эмоций и оценка на отложенных актёрах."""
 
 from pathlib import Path
 
@@ -26,7 +26,7 @@ SEED = 42
 
 
 def train_models(train: pd.DataFrame, columns: list[str]) -> dict[str, object]:
-    """Fit base models on actors 1-16 only."""
+    """Обучает базовые модели только на актёрах 1–16."""
     x_train, y_train = train[columns], train["emotion"]
     search = GridSearchCV(
         RandomForestClassifier(random_state=SEED, n_jobs=-1),
@@ -48,7 +48,7 @@ def train_models(train: pd.DataFrame, columns: list[str]) -> dict[str, object]:
 
 
 def split_actor_data(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Return train, calibration and final-test groups without overlap."""
+    """Разделяет данные на обучение, калибровку и финальный тест."""
     return (
         data[data["actor"].between(1, 16)].copy(),
         data[data["actor"].between(21, 24)].copy(),
@@ -57,7 +57,7 @@ def split_actor_data(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd
 
 
 class TemperatureScaler:
-    """Multiclass temperature scaling fitted by minimizing calibration NLL."""
+    """Многоклассовая температурная калибровка с минимизацией Log Loss."""
 
     def fit(self, probabilities, y_true, classes):
         self.classes_ = np.asarray(classes)
@@ -94,11 +94,29 @@ def evaluate(name: str, method: str, y_true, prediction, probabilities, classes)
     }
 
 
+def evaluate_by_emotion(name, method, y_true, probabilities, classes) -> list[dict]:
+    """Вычисляет Brier Score отдельно для каждой эмоции."""
+    y_true = np.asarray(y_true)
+    rows = []
+    for index, emotion in enumerate(classes):
+        target = (y_true == emotion).astype(float)
+        rows.append(
+            {
+                "model": name,
+                "method": method,
+                "emotion": emotion,
+                "brier_one_vs_rest": float(
+                    np.mean((probabilities[:, index] - target) ** 2)
+                ),
+            }
+        )
+    return rows
+
+
 def calibrate_model(model, x_calibration, y_calibration, method: str = "sigmoid"):
-    """Fit a sigmoid calibrator on a separately held-out actor group."""
-    # scikit-learn 1.7+ replaced cv="prefit" with FrozenEstimator. Keep the
-    # old branch so the project remains usable with the versions from the
-    # original README as well.
+    """Обучает калибратор на отдельной группе актёров."""
+    # В scikit-learn 1.7+ параметр cv="prefit" заменён на FrozenEstimator.
+    # Старый вариант оставлен для совместимости с предыдущими версиями.
     try:
         from sklearn.frozen import FrozenEstimator
     except ImportError:
@@ -130,6 +148,11 @@ def run(features_path: Path = FEATURES, metrics_path: Path = METRICS) -> pd.Data
         before = model.predict_proba(x_test)
         before_pred = model.classes_[before.argmax(axis=1)]
         rows.append(evaluate(name, "none", y_test, before_pred, before, model.classes_))
+        emotion_rows.extend(
+            evaluate_by_emotion(
+                name, "none", y_test, before, model.classes_
+            )
+        )
         calibrators = {
             "sigmoid": calibrate_model(model, x_cal, y_cal, method="sigmoid"),
             "isotonic": calibrate_model(model, x_cal, y_cal, method="isotonic"),
@@ -149,11 +172,9 @@ def run(features_path: Path = FEATURES, metrics_path: Path = METRICS) -> pd.Data
                 f"{name} | {method}: Log Loss={metrics_row['log_loss']:.4f}, "
                 f"Brier={metrics_row['brier_score']:.4f}, ECE={metrics_row['ece']:.4f}"
             )
-            for emotion in classes:
-                index = list(classes).index(emotion)
-                target = (y_test.to_numpy() == emotion).astype(float)
-                emotion_rows.append({"model": name, "method": method, "emotion": emotion,
-                                     "brier_one_vs_rest": float(np.mean((after[:, index] - target) ** 2))})
+            emotion_rows.extend(
+                evaluate_by_emotion(name, method, y_test, after, classes)
+            )
         labels = list(model.classes_)
         for phase, predictions in (("none", before_pred), ("sigmoid", calibrators["sigmoid"].predict(x_test)),
                                    ("isotonic", calibrators["isotonic"].predict(x_test)),

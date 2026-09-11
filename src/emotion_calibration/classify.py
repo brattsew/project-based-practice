@@ -19,7 +19,7 @@ SEED = 42
 
 
 def feature_columns(data: pd.DataFrame) -> list[str]:
-    """Return numeric audio features, excluding metadata columns."""
+    """Возвращает числовые аудиопризнаки без столбцов метаданных."""
     metadata = {
         "path", "filename", "emotion", "intensity", "statement",
         "repetition", "actor", "actor_gender",
@@ -28,12 +28,12 @@ def feature_columns(data: pd.DataFrame) -> list[str]:
 
 
 def multiclass_brier_score(y_true, probabilities, classes) -> float:
-    """Multiclass Brier score: mean squared error against one-hot targets."""
+    """Вычисляет многоклассовый Brier Score по one-hot-меткам."""
     class_to_index = {label: index for index, label in enumerate(classes)}
     target = pd.get_dummies(pd.Series(y_true), dtype=float).reindex(
         columns=classes, fill_value=0.0
     ).to_numpy()
-    # pandas may sort columns differently when classes are numpy strings.
+    # Pandas может изменить порядок столбцов для строковых классов NumPy.
     if target.shape[1] != len(classes):
         target = pd.DataFrame(
             [[float(class_to_index[label] == index) for index in range(len(classes))]
@@ -43,43 +43,51 @@ def multiclass_brier_score(y_true, probabilities, classes) -> float:
 
 
 def expected_calibration_error(y_true, probabilities, classes, bins: int = 10) -> float:
-    """ECE based on confidence of the top prediction."""
-    predictions = classes[probabilities.argmax(axis=1)]
-    confidence = probabilities.max(axis=1)
-    correct = (predictions == pd.Series(y_true).to_numpy()).astype(float)
-    edges = np.linspace(0.0, 1.0, bins + 1)
-    error = 0.0
-    for left, right in zip(edges[:-1], edges[1:]):
-        mask = (confidence >= left) & (confidence <= right if right == 1 else confidence < right)
-        if mask.any():
-            error += mask.mean() * abs(correct[mask].mean() - confidence[mask].mean())
-    return float(error)
+    """Возвращает ожидаемую ошибку калибровки по уверенности модели."""
+    return calibration_errors(y_true, probabilities, classes, bins)["ece"]
 
 
 def calibration_errors(y_true, probabilities, classes, bins: int = 10) -> dict[str, float]:
-    """Return fixed-bin ECE/MCE and quantile-bin (adaptive) ECE."""
+    """Вычисляет ECE, MCE и адаптивный ECE."""
     predictions = classes[probabilities.argmax(axis=1)]
     confidence = probabilities.max(axis=1)
     correct = (predictions == pd.Series(y_true).to_numpy()).astype(float)
 
-    def bin_error(groups):
-        errors = []
+    def summarize(groups):
+        weighted_error = 0.0
+        maximum_error = 0.0
         for group in groups:
-            if len(group):
-                errors.append(abs(correct[group].mean() - confidence[group].mean()))
-        return errors
+            if not len(group):
+                continue
+            error = abs(correct[group].mean() - confidence[group].mean())
+            weighted_error += len(group) * error
+            maximum_error = max(maximum_error, error)
+        return weighted_error / len(confidence), maximum_error
 
-    fixed_groups = [np.flatnonzero((confidence >= left) & (confidence <= right if right == 1 else confidence < right))
-                    for left, right in zip(np.linspace(0, 1, bins + 1)[:-1], np.linspace(0, 1, bins + 1)[1:])]
-    fixed_errors = bin_error(fixed_groups)
+    fixed_edges = np.linspace(0.0, 1.0, bins + 1)
+    fixed_groups = [
+        np.flatnonzero(
+            (confidence >= left)
+            & (confidence <= right if right == 1.0 else confidence < right)
+        )
+        for left, right in zip(fixed_edges[:-1], fixed_edges[1:])
+    ]
     adaptive_edges = np.quantile(confidence, np.linspace(0, 1, bins + 1))
-    adaptive_groups = [np.flatnonzero((confidence >= left) & (confidence <= right if i == bins - 1 else confidence < right))
-                       for i, (left, right) in enumerate(zip(adaptive_edges[:-1], adaptive_edges[1:]))]
-    adaptive_errors = bin_error(adaptive_groups)
+    adaptive_groups = [
+        np.flatnonzero(
+            (confidence >= left)
+            & (confidence <= right if index == bins - 1 else confidence < right)
+        )
+        for index, (left, right) in enumerate(
+            zip(adaptive_edges[:-1], adaptive_edges[1:])
+        )
+    ]
+    ece, mce = summarize(fixed_groups)
+    adaptive_ece, _ = summarize(adaptive_groups)
     return {
-        "ece": float(sum(len(group) * error for group, error in zip(fixed_groups, fixed_errors)) / len(confidence)),
-        "mce": float(max(fixed_errors, default=0.0)),
-        "adaptive_ece": float(sum(len(group) * error for group, error in zip(adaptive_groups, adaptive_errors)) / len(confidence)),
+        "ece": float(ece),
+        "mce": float(mce),
+        "adaptive_ece": float(adaptive_ece),
     }
 
 

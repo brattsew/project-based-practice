@@ -3,8 +3,14 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from emotion_calibration.calibrate import TemperatureScaler, evaluate, split_actor_data
+from emotion_calibration.calibrate import (
+    TemperatureScaler,
+    evaluate,
+    evaluate_by_emotion,
+    split_actor_data,
+)
 from emotion_calibration.classify import (
+    calibration_errors,
     expected_calibration_error,
     feature_columns,
     multiclass_brier_score,
@@ -23,6 +29,16 @@ class CalibrationTests(unittest.TestCase):
         classes = np.array(["a", "b"])
         self.assertEqual(multiclass_brier_score(y, p, classes), 0.0)
         self.assertEqual(expected_calibration_error(y, p, classes), 0.0)
+
+    def test_ece_ignores_empty_bins_without_losing_alignment(self):
+        y = np.array(["a", "b"])
+        probabilities = np.array([[0.55, 0.45], [0.95, 0.05]])
+        classes = np.array(["a", "b"])
+
+        errors = calibration_errors(y, probabilities, classes)
+
+        self.assertAlmostEqual(errors["ece"], 0.7)
+        self.assertAlmostEqual(expected_calibration_error(y, probabilities, classes), 0.7)
 
     def test_feature_columns_exclude_metadata(self):
         data = pd.DataFrame({"actor": [1], "emotion": ["calm"], "mfcc_01_mean": [0.2]})
@@ -50,6 +66,17 @@ class CalibrationTests(unittest.TestCase):
         result = scaler.predict_proba(probabilities)
         self.assertTrue(np.allclose(result.sum(axis=1), 1.0))
         self.assertGreater(scaler.temperature_, 0.0)
+
+    def test_brier_by_emotion_contains_every_class_and_method(self):
+        y = np.array(["a", "b"])
+        probabilities = np.array([[0.8, 0.2], [0.25, 0.75]])
+
+        rows = evaluate_by_emotion(
+            "demo", "none", y, probabilities, np.array(["a", "b"])
+        )
+
+        self.assertEqual({row["emotion"] for row in rows}, {"a", "b"})
+        self.assertEqual({row["method"] for row in rows}, {"none"})
 
 
 if __name__ == "__main__":
